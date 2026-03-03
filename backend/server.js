@@ -4,6 +4,7 @@ import cors from 'cors';
 import session from 'express-session';
 import passport from 'passport';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 
@@ -89,10 +90,21 @@ app.use('/api/analytics', ensureAdmin, analyticsRoutes);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const frontendPath = path.join(__dirname, '../frontend/dist');
+const indexPath = path.join(frontendPath, 'index.html');
+
 app.use(express.static(frontendPath));
 
-app.get(/.*/, (req, res) => {
-  res.sendFile(path.join(frontendPath, 'index.html'));
+// API 404 handler
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'API endpoint not found' });
+});
+
+app.get('*', (req, res) => {
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(503).send('Frontend build not found. Please run "npm run build" in the frontend directory.');
+  }
 });
 
 // ✅ Start server

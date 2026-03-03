@@ -6,14 +6,12 @@ import passport from 'passport';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import analyticsRoutes from './routes/analytics.js';
-
-
 
 import attendanceRoutes from './routes/attendance.js';
 import busLocationRoutes from './routes/buslocation.js';
 import NotificationRoutes from './routes/Notification.js';
 import adminAuthRoutes from './routes/adminAuth.js';
+import analyticsRoutes from './routes/analytics.js';
 import Admin from './models/Admin.js';
 
 dotenv.config();
@@ -22,6 +20,7 @@ const app = express();
 // ✅ Updated CORS setup: allow both local + deployed frontend
 const allowedOrigins = [
   'http://localhost:5173',
+  'http://localhost:5174',
   'https://bus-tracking-app-wt0f.onrender.com'
 ];
 
@@ -34,9 +33,14 @@ app.use(express.json());
 
 // ✅ Session + Passport setup
 app.use(session({
-  secret: 'admin-secret-key',
+  secret: process.env.SESSION_SECRET || 'dypatil-bustrack-secret-2024',
   resave: false,
-  saveUninitialized: false
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    secure: false, // set to true in production with HTTPS
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
 }));
 app.use(passport.initialize());
 app.use(passport.session());
@@ -48,8 +52,25 @@ passport.deserializeUser(Admin.deserializeUser());
 const MONGO_URL = process.env.MONGO_URL;
 
 mongoose.connect(MONGO_URL)
-  .then(() => console.log('MongoDB connected'))
-  .catch((error) => console.error('MongoDB connection error:', error));
+  .then(() => console.log('✅ MongoDB connected successfully'))
+  .catch((error) => console.error('❌ MongoDB connection error:', error));
+
+// ✅ Health check
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'ok', 
+    message: 'DY Patil Bus Tracking System - API Running',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// ✅ Session check endpoint
+app.get('/api/admin/session', (req, res) => {
+  res.json({ 
+    loggedIn: req.isAuthenticated(),
+    signupDisabled: false
+  });
+});
 
 // ✅ API Routes
 app.use('/api/attendance', attendanceRoutes);
@@ -57,21 +78,19 @@ app.use('/', busLocationRoutes);
 app.use('/api/alerts', NotificationRoutes);
 app.use('/api/admin', adminAuthRoutes);
 
+// ✅ Analytics route (protected)
 function ensureAdmin(req, res, next) {
-  if (req.isAuthenticated() && req.user.role === 'admin') return next();
-  res.status(403).json({ error: 'Access denied' });
+  if (req.isAuthenticated()) return next();
+  res.status(403).json({ error: 'Access denied. Please login.' });
 }
 app.use('/api/analytics', ensureAdmin, analyticsRoutes);
 
 // ✅ Serve frontend (React build)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const frontendPath = path.join(__dirname, '../backend/dist');
+const frontendPath = path.join(__dirname, '../frontend/dist');
 app.use(express.static(frontendPath));
 
-app.get('/', (req, res) => {
-  res.sendFile(path.join(frontendPath, 'index.html'));
-});
 app.get(/.*/, (req, res) => {
   res.sendFile(path.join(frontendPath, 'index.html'));
 });
@@ -79,5 +98,5 @@ app.get(/.*/, (req, res) => {
 // ✅ Start server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`Server started on port ${PORT} - http://localhost:${PORT}`);
+  console.log(`🚀 DY Patil Bus Tracker - Server started on http://localhost:${PORT}`);
 });

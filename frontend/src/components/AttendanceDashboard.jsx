@@ -1,249 +1,235 @@
-import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import Sidebar from './Sidebar';
 import {
-  Menu as MenuIcon,
-  Home as HomeIcon,
-  DirectionsBus as BusIcon,
-  Search as SearchIcon,
-  People as PeopleIcon,
-  Warning as WarningIcon,
-  Add as AddIcon,
-  Logout as LogoutIcon,
-  Close as CloseIcon,
-} from '@mui/icons-material';
+  Search, Download, RefreshCw, Users, Bus, Clock,
+  ChevronLeft, ChevronRight, AlertCircle,
+} from 'lucide-react';
+import { adminLogout } from '../api';
+
+const BASE = 'http://localhost:5000';
 
 const AttendanceDashboard = () => {
-  const [logs, setLogs] = useState([]);
-  const [filteredLogs, setFilteredLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [searchStudentId, setSearchStudentId] = useState('');
-  const [searchBusId, setSearchBusId] = useState('');
-  const [dateRange, setDateRange] = useState({ start: '', end: '' });
-  const [filter, setFilter] = useState('All');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [logs, setLogs]               = useState([]);
+  const [filtered, setFiltered]       = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState(null);
+  const [searchStudent, setSearchStudent] = useState('');
+  const [searchBus, setSearchBus]     = useState('');
+  const [dateRange, setDateRange]     = useState({ start: '', end: '' });
+  const [rangeFilter, setRangeFilter] = useState('All');
+  const [page, setPage]               = useState(1);
+  const PER_PAGE = 10;
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const fetchLogs = async () => {
-      try {
-        const apiUrl = process.env.NODE_ENV === 'production'
-          ? 'https://bus-tracking-app-wt0f.onrender.com/api/attendance/logs'
-          : 'http://localhost:5000/api/attendance/logs';
-
-        const res = await axios.get(apiUrl);
-        const fetchedLogs = Array.isArray(res.data) ? res.data : [];
-        setLogs(fetchedLogs);
-        setFilteredLogs(fetchedLogs);
-      } catch (err) {
-        setError(`Failed to fetch attendance logs: ${err.message}`);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchLogs();
-  }, []);
-
-  useEffect(() => {
-    let filtered = [...logs];
-
-    if (searchStudentId) {
-      filtered = filtered.filter(log =>
-        log.studentId?.studentId?.toLowerCase().includes(searchStudentId.toLowerCase())
-      );
+  const fetchLogs = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await axios.get(`${BASE}/api/attendance/logs`, { withCredentials: true });
+      const data = Array.isArray(res.data) ? res.data : [];
+      setLogs(data);
+      setFiltered(data);
+    } catch (_err) {
+      setError('Failed to fetch attendance logs. Check server connection.');
+    } finally {
+      setLoading(false);
     }
-
-    if (searchBusId) {
-      filtered = filtered.filter(log =>
-        log.busId?.toLowerCase().includes(searchBusId.toLowerCase())
-      );
-    }
-
-    if (dateRange.start && dateRange.end) {
-      const startDate = new Date(dateRange.start);
-      const endDate = new Date(dateRange.end);
-      filtered = filtered.filter(log => {
-        const logDate = new Date(log.timestamp);
-        return logDate >= startDate && logDate <= endDate;
-      });
-    }
-
-    if (filter !== 'All') {
-      const now = new Date();
-      let startDate;
-      if (filter === 'Today') {
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      } else if (filter === 'Last 7 Days') {
-        startDate = new Date(now);
-        startDate.setDate(now.getDate() - 7);
-      }
-      filtered = filtered.filter(log => new Date(log.timestamp) >= startDate);
-    }
-
-    setFilteredLogs(filtered);
-  }, [searchStudentId, searchBusId, dateRange, filter, logs]);
-
-  const exportToCSV = () => {
-    const headers = ['Student ID,Student Name,Bus ID,Status,Timestamp\n'];
-    const rows = filteredLogs.map(log =>
-      `${log.studentId?.studentId || 'N/A'},${log.studentId?.name || 'N/A'},${log.busId || 'N/A'},${log.status},${new Date(log.timestamp).toLocaleString()}\n`
-    );
-    const csvContent = headers.concat(rows).join('');
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'attendance_logs.csv';
-    a.click();
-    window.URL.revokeObjectURL(url);
   };
 
-  const toggleSidebar = () => setIsSidebarOpen(prev => !prev);
+  useEffect(() => { fetchLogs(); }, []);
+
+  useEffect(() => {
+    let data = [...logs];
+    if (searchStudent) {
+      const q = searchStudent.toLowerCase();
+      data = data.filter(l =>
+        l.studentId?.studentId?.toLowerCase().includes(q) ||
+        l.studentId?.name?.toLowerCase().includes(q)
+      );
+    }
+    if (searchBus) {
+      data = data.filter(l => l.busId?.toLowerCase().includes(searchBus.toLowerCase()));
+    }
+    if (dateRange.start && dateRange.end) {
+      const s = new Date(dateRange.start), e = new Date(dateRange.end);
+      data = data.filter(l => { const d = new Date(l.timestamp); return d >= s && d <= e; });
+    }
+    if (rangeFilter !== 'All') {
+      const now = new Date();
+      const from = rangeFilter === 'Today'
+        ? new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        : new Date(now.setDate(now.getDate() - 7));
+      data = data.filter(l => new Date(l.timestamp) >= from);
+    }
+    setFiltered(data);
+    setPage(1);
+  }, [searchStudent, searchBus, dateRange, rangeFilter, logs]);
+
+  const exportCSV = () => {
+    const rows = [
+      'Student ID,Name,Bus ID,Status,Timestamp',
+      ...filtered.map(l =>
+        `${l.studentId?.studentId || ''},${l.studentId?.name || ''},${l.busId || ''},${l.status},${new Date(l.timestamp).toLocaleString()}`
+      ),
+    ].join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([rows], { type: 'text/csv' }));
+    a.download = 'attendance_logs.csv';
+    a.click();
+  };
+
+  const handleLogout = async () => {
+    try { await adminLogout(); navigate('/login'); window.location.reload(); } catch (_e) { /* noop */ }
+  };
+
+  const totalPages = Math.ceil(filtered.length / PER_PAGE);
+  const paginated  = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const boarded  = filtered.filter(l => l.status === 'Check In').length;
+  const alighted = filtered.length - boarded;
 
   return (
-    <div className="min-h-screen bg-gray-100 font-sans flex">
-      {/* Sidebar */}
-      <div className={`bg-blue-800 text-white w-64 space-y-6 py-6 px-4 fixed inset-y-0 left-0 transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} transition-transform duration-200 ease-in-out z-30`}>
-        <h2 className="text-lg font-semibold mb-4">Navigation</h2>
-        <nav className="flex flex-col space-y-2">
-          <SidebarLink icon={<HomeIcon />} label="Home" onClick={() => navigate('/')} />
-          <SidebarLink icon={<BusIcon />} label="Attendance Dashboard" onClick={() => navigate('/attendance')} />
-          <SidebarLink icon={<SearchIcon />} label="Bus Location Search" onClick={() => navigate('/searchlocation')} />
-          <SidebarLink icon={<PeopleIcon />} label="Student Logs" onClick={() => navigate('/student-logs')} />
-          <SidebarLink icon={<WarningIcon />} label="Emergencies / Overspeeding" onClick={() => navigate('/emergencies-overspeeding')} />
-          <SidebarLink icon={<AddIcon />} label="Add Bus" onClick={() => navigate('/add-bus')} />
-        </nav>
-      </div>
+    <div className="app-layout">
+      <Sidebar onLogout={handleLogout} />
 
-      {/* Main content */}
-      <div className={`flex-1 transition-all duration-200 ${isSidebarOpen ? 'ml-64' : 'ml-0'}`}>
-        {/* Top Navbar */}
-        <header className="bg-white shadow-sm">
-          <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-            <div className="flex items-center space-x-4">
-              <button onClick={toggleSidebar} className="text-gray-600">
-                {isSidebarOpen ? <CloseIcon /> : <MenuIcon />}
-              </button>
-              <h1 className="text-2xl font-bold text-gray-900">School Name</h1>
-            </div>
-            <button className="flex items-center bg-gray-200 text-gray-700 px-4 py-2 rounded-full hover:bg-gray-300 transition">
-              <LogoutIcon fontSize="small" className="mr-2" />
-              Logout
+      <div className="main-content">
+        <div className="topbar">
+          <div className="topbar-left">
+            <div className="topbar-greeting">Student Attendance</div>
+            <div className="topbar-subtitle">RFID-based boarding and alighting records</div>
+          </div>
+          <div className="topbar-right">
+            <button className="btn btn-secondary btn-sm" onClick={fetchLogs}>
+              <RefreshCw size={13} /> Refresh
+            </button>
+            <button className="btn btn-primary btn-sm" onClick={exportCSV}>
+              <Download size={13} /> Export CSV
             </button>
           </div>
-        </header>
+        </div>
 
-        {/* Page Body */}
-        <main className="max-w-7xl mx-auto px-4 py-6">
-          <div className="bg-white shadow-md rounded-lg p-6">
-            <h2 className="text-xl font-semibold mb-4">Attendance Dashboard</h2>
+        <div className="page-container animate-fade-in-up">
 
-            {/* Filters */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-4">
-              <div className="flex flex-wrap gap-2">
+          {/* Stats */}
+          <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: 20 }}>
+            {[
+              { label: 'Total Records',      value: filtered.length, icon: Users, color: 'blue'  },
+              { label: 'Boarded (Check In)', value: boarded,         icon: Bus,   color: 'green' },
+              { label: 'Alighted',           value: alighted,        icon: Clock, color: 'amber' },
+            ].map(({ label, value, icon: Icon, color }) => (
+              <div className={`stat-card ${color}`} key={label}>
+                <div className="stat-card-header">
+                  <div className="stat-card-title">{label}</div>
+                  <div className={`stat-card-icon ${color}`}><Icon size={17} /></div>
+                </div>
+                <div className="stat-card-value">{value}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Filters */}
+          <div className="glass-card" style={{ marginBottom: 20 }}>
+            <div className="flex flex-wrap gap-12 items-center">
+              <div className="form-input-icon-wrapper" style={{ flex: 1, minWidth: 180 }}>
+                <Search size={14} />
                 <input
-                  type="text"
-                  placeholder="Search by Student ID"
-                  value={searchStudentId}
-                  onChange={(e) => setSearchStudentId(e.target.value)}
-                  className="input-style"
-                />
-                <input
-                  type="text"
-                  placeholder="Search by Bus ID"
-                  value={searchBusId}
-                  onChange={(e) => setSearchBusId(e.target.value)}
-                  className="input-style"
-                />
-                <input
-                  type="date"
-                  value={dateRange.start}
-                  onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-                  className="input-style"
-                />
-                <input
-                  type="date"
-                  value={dateRange.end}
-                  onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                  className="input-style"
+                  className="form-input"
+                  placeholder="Search by student ID or name..."
+                  value={searchStudent}
+                  onChange={e => setSearchStudent(e.target.value)}
                 />
               </div>
-              <div className="flex gap-2">
-                {['Today', 'Last 7 Days', 'All'].map((range) => (
-                  <button
-                    key={range}
-                    onClick={() => setFilter(range)}
-                    className={`px-4 py-2 rounded-md ${filter === range ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'} hover:bg-blue-500 hover:text-white transition`}
-                  >
-                    {range}
+              <div className="form-input-icon-wrapper" style={{ flex: 1, minWidth: 160 }}>
+                <Bus size={14} />
+                <input
+                  className="form-input"
+                  placeholder="Filter by bus ID..."
+                  value={searchBus}
+                  onChange={e => setSearchBus(e.target.value)}
+                />
+              </div>
+              <input type="date" className="form-input" style={{ width: 'auto' }} value={dateRange.start} onChange={e => setDateRange(d => ({ ...d, start: e.target.value }))} />
+              <input type="date" className="form-input" style={{ width: 'auto' }} value={dateRange.end}   onChange={e => setDateRange(d => ({ ...d, end:   e.target.value }))} />
+              <div className="filter-tab-bar">
+                {['Today', 'Last 7 Days', 'All'].map(r => (
+                  <button key={r} className={`filter-tab ${rangeFilter === r ? 'active' : ''}`} onClick={() => setRangeFilter(r)}>
+                    {r}
                   </button>
                 ))}
-                <button
-                  onClick={exportToCSV}
-                  className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition"
-                >
-                  Export to CSV
-                </button>
               </div>
             </div>
+            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+              {filtered.length} record{filtered.length !== 1 ? 's' : ''} found
+            </div>
+          </div>
 
-            {/* Table or Feedback */}
+          {/* Table */}
+          <div className="glass-card" style={{ padding: 0 }}>
             {loading ? (
-              <div className="text-center py-12">
-                <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-blue-500 mx-auto mb-4"></div>
-                <p className="text-gray-600">Loading attendance logs...</p>
-              </div>
+              <div className="loading-container"><div className="loading-spinner" /><span>Loading records…</span></div>
             ) : error ? (
-              <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-md">{error}</div>
-            ) : filteredLogs.length === 0 ? (
-              <p className="text-center text-gray-600 py-12">No attendance logs found.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      {['Student ID', 'Student Name', 'Bus ID', 'Status', 'Timestamp'].map((col) => (
-                        <th key={col} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          {col}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredLogs.map((log, index) => (
-                      <tr key={log._id} className={index % 2 === 0 ? 'bg-gray-50' : ''}>
-                        <td className="px-6 py-4 text-sm text-gray-900">{log.studentId?.studentId || 'N/A'}</td>
-                        <td className="px-6 py-4 text-sm text-gray-900">{log.studentId?.name || 'N/A'}</td>
-                        <td className="px-6 py-4 text-sm text-gray-900">{log.busId || 'N/A'}</td>
-                        <td className="px-6 py-4">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                            log.status === 'Check In' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                          }`}>
-                            {log.status === 'Check In' ? 'Boarded' : 'Alighted'}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-900">{new Date(log.timestamp).toLocaleString()}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="notification error" style={{ margin: 20 }}><AlertCircle size={15} /> {error}</div>
+            ) : filtered.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-state-icon"><Users size={24} color="var(--text-muted)" /></div>
+                <div className="empty-state-title">No records found</div>
+                <div className="empty-state-desc">Adjust your search filters or refresh the data.</div>
               </div>
+            ) : (
+              <>
+                <div className="table-container" style={{ border: 'none' }}>
+                  <table className="premium-table">
+                    <thead>
+                      <tr>
+                        <th>#</th><th>Student ID</th><th>Name</th><th>Bus ID</th><th>Status</th><th>Timestamp</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginated.map((log, i) => (
+                        <tr key={log._id}>
+                          <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{(page - 1) * PER_PAGE + i + 1}</td>
+                          <td style={{ fontWeight: 600, color: 'var(--brand-primary)' }}>{log.studentId?.studentId || 'N/A'}</td>
+                          <td>{log.studentId?.name || 'N/A'}</td>
+                          <td>{log.busId || 'N/A'}</td>
+                          <td>
+                            <span className={`badge ${log.status === 'Check In' ? 'badge-active' : 'badge-error'}`}>
+                              {log.status === 'Check In' ? 'Check In' : 'Check Out'}
+                            </span>
+                          </td>
+                          <td style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                            {new Date(log.timestamp).toLocaleString('en-IN')}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="pagination">
+                  <div className="pagination-info">
+                    Showing {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, filtered.length)} of {filtered.length}
+                  </div>
+                  <div className="pagination-pages">
+                    <button className="pagination-btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+                      <ChevronLeft size={14} />
+                    </button>
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => i + 1).map(p => (
+                      <button key={p} className={`pagination-btn ${page === p ? 'active' : ''}`} onClick={() => setPage(p)}>{p}</button>
+                    ))}
+                    {totalPages > 5 && <span className="pagination-btn" style={{ cursor: 'default', pointerEvents: 'none' }}>…</span>}
+                    <button className="pagination-btn" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              </>
             )}
           </div>
-        </main>
+        </div>
       </div>
     </div>
   );
 };
-
-// Reusable sidebar button component
-const SidebarLink = ({ icon, label, onClick }) => (
-  <button onClick={onClick} className="flex items-center space-x-3 px-4 py-2 hover:bg-blue-700 rounded-md transition">
-    {icon}
-    <span>{label}</span>
-  </button>
-);
 
 export default AttendanceDashboard;

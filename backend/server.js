@@ -99,11 +99,16 @@ app.use('/api', (req, res) => {
   res.status(404).json({ error: 'API endpoint not found' });
 });
 
-app.get('*', (req, res) => {
-  if (fs.existsSync(indexPath)) {
-    res.sendFile(indexPath);
+// Handle all other GET requests (React Router fallback)
+app.use((req, res, next) => {
+  if (req.method === 'GET') {
+    if (fs.existsSync(indexPath)) {
+      res.sendFile(indexPath);
+    } else {
+      res.status(503).send('Frontend build not found. Please run "npm run build" in the frontend directory.');
+    }
   } else {
-    res.status(503).send('Frontend build not found. Please run "npm run build" in the frontend directory.');
+    next();
   }
 });
 

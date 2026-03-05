@@ -101,15 +101,25 @@ app.use('/api', (req, res) => {
 
 // Handle all other GET requests (React Router fallback)
 app.use((req, res, next) => {
-  if (req.method === 'GET') {
+  if (req.method === 'GET' && !req.originalUrl.startsWith('/api')) {
     if (fs.existsSync(indexPath)) {
-      res.sendFile(indexPath);
+      res.sendFile(indexPath, err => {
+        if (err) {
+          console.error("sendFile error:", err.message);
+          if (!res.headersSent) res.status(500).end();
+        }
+      });
     } else {
-      res.status(503).send('Frontend build not found. Please run "npm run build" in the frontend directory.');
+      res.status(503).send('Frontend build not found. Please run "npm run build".');
     }
   } else {
     next();
   }
+});
+
+app.use((err, req, res, next) => {
+  console.error('Express global error:', err.message);
+  if (!res.headersSent) res.status(500).send('Internal Server Error');
 });
 
 // ✅ Start server

@@ -99,12 +99,27 @@ app.use('/api', (req, res) => {
   res.status(404).json({ error: 'API endpoint not found' });
 });
 
-app.get('*', (req, res) => {
-  if (fs.existsSync(indexPath)) {
-    res.sendFile(indexPath);
+// Handle all other GET requests (React Router fallback)
+app.use((req, res, next) => {
+  if (req.method === 'GET' && !req.originalUrl.startsWith('/api')) {
+    if (fs.existsSync(indexPath)) {
+      res.sendFile(indexPath, err => {
+        if (err) {
+          console.error("sendFile error:", err.message);
+          if (!res.headersSent) res.status(500).end();
+        }
+      });
+    } else {
+      res.status(503).send('Frontend build not found. Please run "npm run build".');
+    }
   } else {
-    res.status(503).send('Frontend build not found. Please run "npm run build" in the frontend directory.');
+    next();
   }
+});
+
+app.use((err, req, res, next) => {
+  console.error('Express global error:', err.message);
+  if (!res.headersSent) res.status(500).send('Internal Server Error');
 });
 
 // ✅ Start server
